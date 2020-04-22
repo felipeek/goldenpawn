@@ -28,6 +28,13 @@ typedef enum {
 } Chess_Piece_Type;
 
 typedef struct {
+    Chess_Board_Position from;
+    Chess_Board_Position to;
+    int will_promote;
+    Chess_Piece_Type promotion_type;
+} Chess_Move;
+
+typedef struct {
     Chess_Piece_Type type;
     Chess_Color color;
 } Chess_Piece;
@@ -48,6 +55,6 @@ typedef struct {
 
 void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const char** argv);
 void chess_get_random_move(const Chess_Context* chess_ctx, char* move);
-void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, Chess_Board_Position from, Chess_Board_Position to);
+void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, const Chess_Move* move);
 
 #endif

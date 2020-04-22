@@ -4,7 +4,15 @@
 #include <assert.h>
 
 static int available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves);
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves);
+
+static Chess_Move chess_move_no_promotion(Chess_Board_Position from, Chess_Board_Position to) {
+    Chess_Move move;
+    move.from = from;
+    move.to = to;
+    move.will_promote = 0;
+    return move;
+}
 
 static void king_positions_fill(Chess_Context* chess_ctx) {
     int found_white_king = 0, found_black_king = 0;
@@ -38,11 +46,11 @@ static int is_square_being_attacked(const Chess_Context* chess_ctx, Chess_Board_
         for (int x = 0; x < CHESS_BOARD_WIDTH; ++x) {
             const Chess_Piece* current_piece = &chess_ctx->board[y][x];
             if (current_piece->type != CHESS_PIECE_EMPTY && current_piece->color == by_color) {
-                Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
+                Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
                 int available_moves_num = available_moves_get(chess_ctx, CHESS_POS(y, x), available_moves, 1, 1);
 
                 for (int k = 0; k < available_moves_num; ++k) {
-                    if (available_moves[k].x == position.x && available_moves[k].y == position.y) {
+                    if (available_moves[k].to.x == position.x && available_moves[k].to.y == position.y) {
                         return 1;
                     }
                 }
@@ -54,16 +62,16 @@ static int is_square_being_attacked(const Chess_Context* chess_ctx, Chess_Board_
 }
 
 // Note: this function MUST support chess_ctx == new_ctx !
-void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, Chess_Board_Position from, Chess_Board_Position to) {
+void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, const Chess_Move* move) {
     *new_ctx = *chess_ctx;
-    Chess_Piece* piece = &new_ctx->board[from.y][from.x];
+    Chess_Piece* piece = &new_ctx->board[move->from.y][move->from.x];
 
     // Update castles
     if (chess_ctx->white_state.short_castling_available) {
         if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE) {
             // King is being moved.
             new_ctx->white_state.short_castling_available = 0;
-        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_WHITE && from.x == 7 && from.y == 0) {
+        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_WHITE && move->from.x == 7 && move->from.y == 0) {
             // Rook is being moved.
             new_ctx->white_state.short_castling_available = 0;
         }
@@ -72,7 +80,7 @@ void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, Ch
         if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE) {
             // King is being moved.
             new_ctx->white_state.long_castling_available = 0;
-        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_WHITE && from.x == 0 && from.y == 0) {
+        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_WHITE && move->from.x == 0 && move->from.y == 0) {
             // Rook is being moved.
             new_ctx->white_state.long_castling_available = 0;
         }
@@ -81,7 +89,7 @@ void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, Ch
         if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK) {
             // King is being moved.
             new_ctx->black_state.short_castling_available = 0;
-        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_BLACK && from.x == 7 && from.y == 7) {
+        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_BLACK && move->from.x == 7 && move->from.y == 7) {
             // Rook is being moved.
             new_ctx->black_state.short_castling_available = 0;
         }
@@ -90,13 +98,13 @@ void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, Ch
         if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK) {
             // King is being moved.
             new_ctx->black_state.long_castling_available = 0;
-        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_BLACK && from.x == 0 && from.y == 7) {
+        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_BLACK && move->from.x == 0 && move->from.y == 7) {
             // Rook is being moved.
             new_ctx->black_state.long_castling_available = 0;
         }
     }
 
-    if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE && from.x == 4 && from.y == 0 && to.x == 6 && to.y == 0) {
+    if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE && move->from.x == 4 && move->from.y == 0 && move->to.x == 6 && move->to.y == 0) {
         // Special case: white castles short
         // We do not check if the rook is there... we trust the GUI.
 
@@ -108,7 +116,7 @@ void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, Ch
         Chess_Piece* rook = &new_ctx->board[0][7];
         new_ctx->board[0][5] = *rook;
         new_ctx->board[0][7] = empty_piece();
-    } else if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE && from.x == 4 && from.y == 0 && to.x == 2 && to.y == 0) {
+    } else if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE && move->from.x == 4 && move->from.y == 0 && move->to.x == 2 && move->to.y == 0) {
         // Special case: white castles long
         // We do not check if the rook is there... we trust the GUI.
 
@@ -120,7 +128,7 @@ void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, Ch
         Chess_Piece* rook = &new_ctx->board[0][0];
         new_ctx->board[0][3] = *rook;
         new_ctx->board[0][0] = empty_piece();
-    } else if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK && from.x == 4 && from.y == 7 && to.x == 6 && to.y == 7) {
+    } else if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK && move->from.x == 4 && move->from.y == 7 && move->to.x == 6 && move->to.y == 7) {
         // Special case: black castles short
         // We do not check if the rook is there... we trust the GUI.
 
@@ -132,7 +140,7 @@ void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, Ch
         Chess_Piece* rook = &new_ctx->board[7][7];
         new_ctx->board[7][5] = *rook;
         new_ctx->board[7][7] = empty_piece();
-    } else if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK && from.x == 4 && from.y == 7 && to.x == 2 && to.y == 7) {
+    } else if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK && move->from.x == 4 && move->from.y == 7 && move->to.x == 2 && move->to.y == 7) {
         // Special case: black castles long
         // We do not check if the rook is there... we trust the GUI.
 
@@ -145,8 +153,12 @@ void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, Ch
         new_ctx->board[7][3] = *rook;
         new_ctx->board[7][0] = empty_piece();
     } else {
-        new_ctx->board[to.y][to.x] = *piece;
-        new_ctx->board[from.y][from.x] = empty_piece();
+        new_ctx->board[move->to.y][move->to.x] = *piece;
+        new_ctx->board[move->from.y][move->from.x] = empty_piece();
+
+        if (move->will_promote) {
+            new_ctx->board[move->to.y][move->to.x].type = move->promotion_type;
+        }
     }
 
     king_positions_fill(new_ctx);
@@ -166,30 +178,61 @@ static int chess_position_is_within_bounds(Chess_Board_Position position) {
     return 0;
 }
 
-static int is_king_exposed_if_moved_to(const Chess_Context* chess_ctx, Chess_Board_Position king_position, Chess_Board_Position target_position) {
-    Chess_Context ctx_king_moved;
-    const Chess_Piece* piece = &chess_ctx->board[king_position.y][king_position.x];
-    chess_move_piece(chess_ctx, &ctx_king_moved, king_position, target_position);
-    return piece->color == CHESS_COLOR_WHITE ? ctx_king_moved.white_state.is_king_under_attack : ctx_king_moved.black_state.is_king_under_attack;
-}
-
-static int is_king_exposed_if_piece_is_moved(const Chess_Context* chess_ctx, Chess_Board_Position from, Chess_Board_Position to) {
+static int is_king_exposed_if_piece_is_moved(const Chess_Context* chess_ctx, const Chess_Move* move) {
     Chess_Context ctx_without_piece;
-    chess_move_piece(chess_ctx, &ctx_without_piece, from, to);
-    const Chess_Piece* piece = &ctx_without_piece.board[to.y][to.x];
+    chess_move_piece(chess_ctx, &ctx_without_piece, move);
+    const Chess_Piece* piece = &ctx_without_piece.board[move->to.y][move->to.x];
     return piece->color == CHESS_COLOR_WHITE ? ctx_without_piece.white_state.is_king_under_attack : ctx_without_piece.black_state.is_king_under_attack;
 }
 
-static void position_to_uci_notation(Chess_Board_Position* from, Chess_Board_Position* to, char* uci_str) {
-    uci_str[0] = from->x + 'a';
-    uci_str[1] = from->y + '0' + 1;
-    uci_str[2] = to->x + 'a';
-    uci_str[3] = to->y + '0' + 1;
+static void move_to_uci_notation(const Chess_Move* move, char* uci_str) {
+    uci_str[0] = move->from.x + 'a';
+    uci_str[1] = move->from.y + '0' + 1;
+    uci_str[2] = move->to.x + 'a';
+    uci_str[3] = move->to.y + '0' + 1;
+
+    if (move->will_promote) {
+        switch (move->promotion_type) {
+            case CHESS_PIECE_QUEEN: {
+                uci_str[4] = 'q';
+            } break;
+            case CHESS_PIECE_ROOK: {
+                uci_str[4] = 'r';
+            } break;
+            case CHESS_PIECE_BISHOP: {
+                uci_str[4] = 'b';
+            } break;
+            case CHESS_PIECE_KNIGHT: {
+                uci_str[4] = 'k';
+            } break;
+            default: {
+                assert(0);
+            } break;
+        }
+        uci_str[5] = '\0';
+    }
+
+    uci_str[4] = '\0';
 }
 
-static void uci_notation_to_position(const char* uci_str, Chess_Board_Position* from, Chess_Board_Position* to) {
-    *from = CHESS_POS(uci_str[1] - '0' - 1, uci_str[0] - 'a');
-    *to = CHESS_POS(uci_str[3] - '0' - 1, uci_str[2] - 'a');
+static void uci_notation_to_move(const char* uci_str, Chess_Move* move) {
+    int uci_str_len = strlen(uci_str);
+    move->from = CHESS_POS(uci_str[1] - '0' - 1, uci_str[0] - 'a');
+    move->to = CHESS_POS(uci_str[3] - '0' - 1, uci_str[2] - 'a');
+
+    // Pawn reached last rank.
+    if (uci_str_len == 5) {
+        switch(uci_str[4]) {
+            case 'b': move->promotion_type = CHESS_PIECE_BISHOP; break;
+            case 'n': move->promotion_type = CHESS_PIECE_KNIGHT; break;
+            case 'q': move->promotion_type = CHESS_PIECE_QUEEN; break;
+            case 'r': move->promotion_type = CHESS_PIECE_ROOK; break;
+            default: assert(0);
+        }
+        move->will_promote = 1;
+    } else {
+        move->will_promote = 0;
+    }
 }
 
 static void chess_board_reset(Chess_Context* chess_ctx) {
@@ -283,11 +326,11 @@ void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const
     chess_ctx->black_state.long_castling_available = 1;
     chess_ctx->black_state.short_castling_available = 1;
 
-    Chess_Board_Position from, to;
+    Chess_Move move;
     for (int i = 2; i < argc; ++i) {
-        assert(strlen(argv[i]) == 4);
-        uci_notation_to_position(argv[i], &from, &to);
-        chess_move_piece(chess_ctx, chess_ctx, from, to);
+        assert(strlen(argv[i]) == 4 || strlen(argv[i]) == 5);
+        uci_notation_to_move(argv[i], &move);
+        chess_move_piece(chess_ctx, chess_ctx, &move);
     }
 
     if ((argc - 2) % 2 == 0) {
@@ -297,8 +340,8 @@ void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const
     }
 }
 
-void chess_get_random_move(const Chess_Context* chess_ctx, char* move) {
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
+void chess_get_random_move(const Chess_Context* chess_ctx, char* move_str) {
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
     int available_moves_num = 0;
 
     #if 0
@@ -312,18 +355,16 @@ void chess_get_random_move(const Chess_Context* chess_ctx, char* move) {
     }
     #endif
 
-    Chess_Board_Position from, to;
-
     //////////////// TEST ////////////////
 
     const Chess_Piece* piece = &chess_ctx->board[0][4];
     if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE) {
         available_moves_num = available_moves_get(chess_ctx, CHESS_POS(0, 4), available_moves, 0, 0);
         for (int i = 0; i < available_moves_num; ++i) {
-            Chess_Board_Position current = available_moves[i];
-            if (current.x == 6 && current.y == 0) {
+            Chess_Move current = available_moves[i];
+            if (current.to.x == 6 && current.to.y == 0) {
                 log_debug("white short castling is available.");
-            } else if (current.x == 2 && current.y == 0) {
+            } else if (current.to.x == 2 && current.to.y == 0) {
                 log_debug("white long castling is available.");
             }
         }
@@ -333,10 +374,10 @@ void chess_get_random_move(const Chess_Context* chess_ctx, char* move) {
     if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK) {
         available_moves_num = available_moves_get(chess_ctx, CHESS_POS(7, 4), available_moves, 0, 0);
         for (int i = 0; i < available_moves_num; ++i) {
-            Chess_Board_Position current = available_moves[i];
-            if (current.x == 6 && current.y == 7) {
+            Chess_Move current = available_moves[i];
+            if (current.to.x == 6 && current.to.y == 7) {
                 log_debug("black short castling is available.");
-            } else if (current.x == 2 && current.y == 7) {
+            } else if (current.to.x == 2 && current.to.y == 7) {
                 log_debug("black long castling is available.");
             }
         }
@@ -346,39 +387,40 @@ void chess_get_random_move(const Chess_Context* chess_ctx, char* move) {
 
     ////////////////////////////////////
 
+    Chess_Move move;
     while (1) {
         int h = rand() % CHESS_BOARD_HEIGHT;
         int w = rand() % CHESS_BOARD_WIDTH;
-        from = CHESS_POS(h, w);
-        if (chess_ctx->board[from.y][from.x].type != CHESS_PIECE_EMPTY &&
-            chess_ctx->board[from.y][from.x].color == chess_ctx->current_turn) {
-            available_moves_num = available_moves_get(chess_ctx, from, available_moves, 0, 0);
+        Chess_Board_Position pos = CHESS_POS(h, w);
+        if (chess_ctx->board[pos.y][pos.x].type != CHESS_PIECE_EMPTY &&
+            chess_ctx->board[pos.y][pos.x].color == chess_ctx->current_turn) {
+            available_moves_num = available_moves_get(chess_ctx, pos, available_moves, 0, 0);
             if (available_moves_num > 0) {
                 int r = rand() % available_moves_num;
-                to = available_moves[r];
+                move = available_moves[r];
                 break;
             }
         }
     }
 
-    position_to_uci_notation(&from, &to, move);
+    move_to_uci_notation(&move, move_str);
 }
 
 static int available_move_add_to_list_if_valid(const Chess_Context* chess_ctx,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int available_moves_num,
-    int need_to_check_if_king_is_exposed, Chess_Board_Position from, Chess_Board_Position to) {
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int available_moves_num,
+    int need_to_check_if_king_is_exposed, const Chess_Move* move) {
     if (need_to_check_if_king_is_exposed) {
-        if (!is_king_exposed_if_piece_is_moved(chess_ctx, from, to)) {
-            available_moves[available_moves_num++] = CHESS_POS(to.y, to.x);
+        if (!is_king_exposed_if_piece_is_moved(chess_ctx, move)) {
+            available_moves[available_moves_num++] = *move;
         }
     } else {
-        available_moves[available_moves_num++] = CHESS_POS(to.y, to.x);
+        available_moves[available_moves_num++] = *move;
     }
     return available_moves_num;
 }
 
 static int rook_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed) {
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed) {
     const Chess_Piece* current_piece = &chess_ctx->board[position.y][position.x];
     int available_moves_num = 0;
     assert(current_piece->type == CHESS_PIECE_ROOK || current_piece->type == CHESS_PIECE_QUEEN);
@@ -386,14 +428,17 @@ static int rook_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
 
     int need_to_check_if_king_is_exposed = !king_can_be_exposed;
 
+    Chess_Move candidate_move;
+
     // Left
     for (int x = position.x - 1; x >= 0; --x) {
+        candidate_move = chess_move_no_promotion(position, CHESS_POS(position.y, x));
         if (chess_ctx->board[position.y][x].type == CHESS_PIECE_EMPTY) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(position.y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
         } else if (chess_ctx->board[position.y][x].color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(position.y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
             break;
         } else {
             break;
@@ -402,12 +447,13 @@ static int rook_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
 
     // Right
     for (int x = position.x + 1; x < CHESS_BOARD_WIDTH; ++x) {
+        candidate_move = chess_move_no_promotion(position, CHESS_POS(position.y, x));
         if (chess_ctx->board[position.y][x].type == CHESS_PIECE_EMPTY) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(position.y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
         } else if (chess_ctx->board[position.y][x].color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(position.y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
             break;
         } else {
             break;
@@ -416,12 +462,13 @@ static int rook_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
 
     // Bottom
     for (int y = position.y - 1; y >= 0; --y) {
+        candidate_move = chess_move_no_promotion(position, CHESS_POS(y, position.x));
         if (chess_ctx->board[y][position.x].type == CHESS_PIECE_EMPTY) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, position.x));
+                need_to_check_if_king_is_exposed, &candidate_move);
         } else if (chess_ctx->board[y][position.x].color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, position.x));
+                need_to_check_if_king_is_exposed, &candidate_move);
             break;
         } else {
             break;
@@ -430,12 +477,13 @@ static int rook_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
 
     // Top
     for (int y = position.y + 1; y < CHESS_BOARD_HEIGHT; ++y) {
+        candidate_move = chess_move_no_promotion(position, CHESS_POS(y, position.x));
         if (chess_ctx->board[y][position.x].type == CHESS_PIECE_EMPTY) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, position.x));
+                need_to_check_if_king_is_exposed, &candidate_move);
         } else if (chess_ctx->board[y][position.x].color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, position.x));
+                need_to_check_if_king_is_exposed, &candidate_move);
             break;
         } else {
             break;
@@ -446,7 +494,7 @@ static int rook_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
 }
 
 static int bishop_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed) {
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed) {
     const Chess_Piece* current_piece = &chess_ctx->board[position.y][position.x];
     int available_moves_num = 0;
     assert(current_piece->type == CHESS_PIECE_BISHOP || current_piece->type == CHESS_PIECE_QUEEN);
@@ -454,14 +502,17 @@ static int bishop_available_moves_get(const Chess_Context* chess_ctx, Chess_Boar
 
     int need_to_check_if_king_is_exposed = !king_can_be_exposed;
 
+    Chess_Move candidate_move;
+
     // Top-Right
     for (int x = position.x + 1, y = position.y + 1; x < CHESS_BOARD_HEIGHT && y < CHESS_BOARD_HEIGHT; ++x, ++y) {
+        candidate_move = chess_move_no_promotion(position, CHESS_POS(y, x));
         if (chess_ctx->board[y][x].type == CHESS_PIECE_EMPTY) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
         } else if (chess_ctx->board[y][x].color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
             break;
         } else {
             break;
@@ -470,12 +521,13 @@ static int bishop_available_moves_get(const Chess_Context* chess_ctx, Chess_Boar
 
     // Top-Left
     for (int x = position.x - 1, y = position.y + 1; x >= 0 && y < CHESS_BOARD_HEIGHT; --x, ++y) {
+        candidate_move = chess_move_no_promotion(position, CHESS_POS(y, x));
         if (chess_ctx->board[y][x].type == CHESS_PIECE_EMPTY) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
         } else if (chess_ctx->board[y][x].color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
             break;
         } else {
             break;
@@ -484,12 +536,13 @@ static int bishop_available_moves_get(const Chess_Context* chess_ctx, Chess_Boar
 
     // Bottom-Right
     for (int x = position.x + 1, y = position.y - 1; x < CHESS_BOARD_HEIGHT && y >= 0; ++x, --y) {
+        candidate_move = chess_move_no_promotion(position, CHESS_POS(y, x));
         if (chess_ctx->board[y][x].type == CHESS_PIECE_EMPTY) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
         } else if (chess_ctx->board[y][x].color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
             break;
         } else {
             break;
@@ -498,12 +551,13 @@ static int bishop_available_moves_get(const Chess_Context* chess_ctx, Chess_Boar
 
     // Bottom-Left
     for (int x = position.x - 1, y = position.y - 1; x >= 0 && y >= 0; --x, --y) {
+        candidate_move = chess_move_no_promotion(position, CHESS_POS(y, x));
         if (chess_ctx->board[y][x].type == CHESS_PIECE_EMPTY) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
         } else if (chess_ctx->board[y][x].color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, CHESS_POS(y, x));
+                need_to_check_if_king_is_exposed, &candidate_move);
             break;
         } else {
             break;
@@ -514,7 +568,7 @@ static int bishop_available_moves_get(const Chess_Context* chess_ctx, Chess_Boar
 }
 
 static int knight_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed) {
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed) {
     const Chess_Piece* current_piece = &chess_ctx->board[position.y][position.x];
     int available_moves_num = 0;
     assert(current_piece->type == CHESS_PIECE_KNIGHT);
@@ -522,77 +576,86 @@ static int knight_available_moves_get(const Chess_Context* chess_ctx, Chess_Boar
     
     int need_to_check_if_king_is_exposed = !king_can_be_exposed;
 
-    Chess_Board_Position candidate_move;
+    Chess_Board_Position candidate_position;
+    Chess_Move candidate_move;
 
-    candidate_move = CHESS_POS(position.y + 2, position.x + 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y + 2, position.x + 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, candidate_move);
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
 
-    candidate_move = CHESS_POS(position.y + 2, position.x - 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y + 2, position.x - 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, candidate_move);
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
 
-    candidate_move = CHESS_POS(position.y + 1, position.x + 2);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y + 1, position.x + 2);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, candidate_move);
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
 
-    candidate_move = CHESS_POS(position.y + 1, position.x - 2);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y + 1, position.x - 2);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, candidate_move);
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
 
-    candidate_move = CHESS_POS(position.y - 1, position.x + 2);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y - 1, position.x + 2);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, candidate_move);
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
 
-    candidate_move = CHESS_POS(position.y - 1, position.x - 2);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y - 1, position.x - 2);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, candidate_move);
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
 
-    candidate_move = CHESS_POS(position.y - 2, position.x + 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y - 2, position.x + 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, candidate_move);
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
 
-    candidate_move = CHESS_POS(position.y - 2, position.x - 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y - 2, position.x - 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, candidate_move);
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
 
@@ -600,7 +663,7 @@ static int knight_available_moves_get(const Chess_Context* chess_ctx, Chess_Boar
 }
 
 static int queen_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed) {
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed) {
     const Chess_Piece* current_piece = &chess_ctx->board[position.y][position.x];
     int available_moves_num = 0;
     assert(current_piece->type == CHESS_PIECE_QUEEN);
@@ -612,89 +675,98 @@ static int queen_available_moves_get(const Chess_Context* chess_ctx, Chess_Board
 }
 
 static int king_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves) {
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves) {
     const Chess_Piece* current_piece = &chess_ctx->board[position.y][position.x];
     int available_moves_num = 0;
     assert(current_piece->type == CHESS_PIECE_KING);
     assert(current_piece->color != CHESS_COLOR_COLORLESS);
 
-    Chess_Board_Position candidate_move;
+    Chess_Move candidate_move;
+    Chess_Board_Position candidate_position;
 
-    candidate_move = CHESS_POS(position.y + 1, position.x + 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y + 1, position.x + 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
-            if (king_can_be_exposed || !is_king_exposed_if_moved_to(chess_ctx, position, candidate_move)) {
+            if (king_can_be_exposed || !is_king_exposed_if_piece_is_moved(chess_ctx, &candidate_move)) {
                 available_moves[available_moves_num++] = candidate_move;
             }
         }
     }
 
-    candidate_move = CHESS_POS(position.y + 1, position.x);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y + 1, position.x);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
-            if (king_can_be_exposed || !is_king_exposed_if_moved_to(chess_ctx, position, candidate_move)) {
+            if (king_can_be_exposed || !is_king_exposed_if_piece_is_moved(chess_ctx, &candidate_move)) {
                 available_moves[available_moves_num++] = candidate_move;
             }
         }
     }
 
-    candidate_move = CHESS_POS(position.y + 1, position.x - 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y + 1, position.x - 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
-            if (king_can_be_exposed || !is_king_exposed_if_moved_to(chess_ctx, position, candidate_move)) {
+            if (king_can_be_exposed || !is_king_exposed_if_piece_is_moved(chess_ctx, &candidate_move)) {
                 available_moves[available_moves_num++] = candidate_move;
             }
         }
     }
 
-    candidate_move = CHESS_POS(position.y, position.x + 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y, position.x + 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
-            if (king_can_be_exposed || !is_king_exposed_if_moved_to(chess_ctx, position, candidate_move)) {
+            if (king_can_be_exposed || !is_king_exposed_if_piece_is_moved(chess_ctx, &candidate_move)) {
                 available_moves[available_moves_num++] = candidate_move;
             }
         }
     }
 
-    candidate_move = CHESS_POS(position.y, position.x - 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y, position.x - 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
-            if (king_can_be_exposed || !is_king_exposed_if_moved_to(chess_ctx, position, candidate_move)) {
+            if (king_can_be_exposed || !is_king_exposed_if_piece_is_moved(chess_ctx, &candidate_move)) {
                 available_moves[available_moves_num++] = candidate_move;
             }
         }
     }
 
-    candidate_move = CHESS_POS(position.y - 1, position.x + 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y - 1, position.x + 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
-            if (king_can_be_exposed || !is_king_exposed_if_moved_to(chess_ctx, position, candidate_move)) {
+            if (king_can_be_exposed || !is_king_exposed_if_piece_is_moved(chess_ctx, &candidate_move)) {
                 available_moves[available_moves_num++] = candidate_move;
             }
         }
     }
 
-    candidate_move = CHESS_POS(position.y - 1, position.x);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y - 1, position.x);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
-            if (king_can_be_exposed || !is_king_exposed_if_moved_to(chess_ctx, position, candidate_move)) {
+            if (king_can_be_exposed || !is_king_exposed_if_piece_is_moved(chess_ctx, &candidate_move)) {
                 available_moves[available_moves_num++] = candidate_move;
             }
         }
     }
 
-    candidate_move = CHESS_POS(position.y - 1, position.x - 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = CHESS_POS(position.y - 1, position.x - 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type == CHESS_PIECE_EMPTY || candidate_piece->color != current_piece->color) {
-            if (king_can_be_exposed || !is_king_exposed_if_moved_to(chess_ctx, position, candidate_move)) {
+            if (king_can_be_exposed || !is_king_exposed_if_piece_is_moved(chess_ctx, &candidate_move)) {
                 available_moves[available_moves_num++] = candidate_move;
             }
         }
@@ -707,14 +779,14 @@ static int king_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
                 if (chess_ctx->white_state.short_castling_available) {
                     if (chess_ctx->board[0][5].type == CHESS_PIECE_EMPTY && chess_ctx->board[0][6].type == CHESS_PIECE_EMPTY) {
                         if (!is_square_being_attacked(chess_ctx, CHESS_POS(0, 5), CHESS_COLOR_BLACK) && !is_square_being_attacked(chess_ctx, CHESS_POS(0, 6), CHESS_COLOR_BLACK)) {
-                            available_moves[available_moves_num++] = CHESS_POS(0, 6);
+                            available_moves[available_moves_num++] = chess_move_no_promotion(position, CHESS_POS(0, 6));
                         }
                     }
                 }
                 if (chess_ctx->white_state.long_castling_available) {
                     if (chess_ctx->board[0][3].type == CHESS_PIECE_EMPTY && chess_ctx->board[0][2].type == CHESS_PIECE_EMPTY && chess_ctx->board[0][1].type == CHESS_PIECE_EMPTY) {
                         if (!is_square_being_attacked(chess_ctx, CHESS_POS(0, 3), CHESS_COLOR_BLACK) && !is_square_being_attacked(chess_ctx, CHESS_POS(0, 2), CHESS_COLOR_BLACK)) {
-                            available_moves[available_moves_num++] = CHESS_POS(0, 2);
+                            available_moves[available_moves_num++] = chess_move_no_promotion(position, CHESS_POS(0, 2));
                         }
                     }
                 }
@@ -724,14 +796,14 @@ static int king_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
                 if (chess_ctx->black_state.short_castling_available) {
                     if (chess_ctx->board[7][5].type == CHESS_PIECE_EMPTY && chess_ctx->board[7][6].type == CHESS_PIECE_EMPTY) {
                         if (!is_square_being_attacked(chess_ctx, CHESS_POS(7, 5), CHESS_COLOR_WHITE) && !is_square_being_attacked(chess_ctx, CHESS_POS(7, 6), CHESS_COLOR_WHITE)) {
-                            available_moves[available_moves_num++] = CHESS_POS(7, 6);
+                            available_moves[available_moves_num++] = chess_move_no_promotion(position, CHESS_POS(7, 6));
                         }
                     }
                 }
                 if (chess_ctx->black_state.long_castling_available) {
                     if (chess_ctx->board[7][3].type == CHESS_PIECE_EMPTY && chess_ctx->board[7][2].type == CHESS_PIECE_EMPTY && chess_ctx->board[7][1].type == CHESS_PIECE_EMPTY) {
                         if (!is_square_being_attacked(chess_ctx, CHESS_POS(7, 3), CHESS_COLOR_WHITE) && !is_square_being_attacked(chess_ctx, CHESS_POS(7, 2), CHESS_COLOR_WHITE)) {
-                            available_moves[available_moves_num++] = CHESS_POS(7, 2);
+                            available_moves[available_moves_num++] = chess_move_no_promotion(position, CHESS_POS(7, 2));
                         }
                     }
                 }
@@ -743,7 +815,7 @@ static int king_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
 }
 
 static int pawn_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves) {
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves) {
     const Chess_Piece* current_piece = &chess_ctx->board[position.y][position.x];
     int available_moves_num = 0;
     assert(current_piece->type == CHESS_PIECE_PAWN);
@@ -751,45 +823,50 @@ static int pawn_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
 
     int need_to_check_if_king_is_exposed = !king_can_be_exposed;
 
-    Chess_Board_Position candidate_move;
+    Chess_Move candidate_move;
+    Chess_Board_Position candidate_position;
 
     if (!discard_non_attacking_moves) {
-        candidate_move = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 1, position.x) : CHESS_POS(position.y - 1, position.x);
-        if (chess_position_is_within_bounds(candidate_move)) {
-            const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+        candidate_position = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 1, position.x) : CHESS_POS(position.y - 1, position.x);
+        if (chess_position_is_within_bounds(candidate_position)) {
+            const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+            candidate_move = chess_move_no_promotion(position, candidate_position);
             if (candidate_piece->type == CHESS_PIECE_EMPTY) {
                 available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                    need_to_check_if_king_is_exposed, position, candidate_move);
+                    need_to_check_if_king_is_exposed, &candidate_move);
 
                 // If we can advance 1 tile, then we can also check for two tiles
-                candidate_move = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 2, position.x) : CHESS_POS(position.y - 2, position.x);
+                candidate_position = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 2, position.x) : CHESS_POS(position.y - 2, position.x);
                 int is_pawn_first_move = current_piece->color == CHESS_COLOR_WHITE ? position.y == 1 : position.y == CHESS_BOARD_HEIGHT - 2;
                 if (is_pawn_first_move) {
-                    candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+                    candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+                    candidate_move = chess_move_no_promotion(position, candidate_position);
                     if (candidate_piece->type == CHESS_PIECE_EMPTY) {
                         available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                            need_to_check_if_king_is_exposed, position, candidate_move);
+                            need_to_check_if_king_is_exposed, &candidate_move);
                     }
                 }
             }
         }
     }
 
-    candidate_move = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 1, position.x + 1) : CHESS_POS(position.y - 1, position.x + 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 1, position.x + 1) : CHESS_POS(position.y - 1, position.x + 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type != CHESS_PIECE_EMPTY && candidate_piece->color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, candidate_move);
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
     
-    candidate_move = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 1, position.x - 1) : CHESS_POS(position.y - 1, position.x - 1);
-    if (chess_position_is_within_bounds(candidate_move)) {
-        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
+    candidate_position = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 1, position.x - 1) : CHESS_POS(position.y - 1, position.x - 1);
+    if (chess_position_is_within_bounds(candidate_position)) {
+        const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type != CHESS_PIECE_EMPTY && candidate_piece->color != current_piece->color) {
             available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, position, candidate_move);
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
 
@@ -799,7 +876,7 @@ static int pawn_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
 }
 
 static int available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves) {
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves) {
     const Chess_Piece* piece = &chess_ctx->board[position.y][position.x];
     assert(piece->color != CHESS_COLOR_COLORLESS);
     assert(piece->type != CHESS_PIECE_EMPTY);
