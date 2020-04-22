@@ -6,6 +6,15 @@
 static int available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
     Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves);
 
+static Chess_Move chess_move_with_promotion(Chess_Board_Position from, Chess_Board_Position to, Chess_Piece_Type promote_to) {
+    Chess_Move move;
+    move.from = from;
+    move.to = to;
+    move.will_promote = 1;
+    move.promotion_type = promote_to;
+    return move;
+}
+
 static Chess_Move chess_move_no_promotion(Chess_Board_Position from, Chess_Board_Position to) {
     Chess_Move move;
     move.from = from;
@@ -203,16 +212,16 @@ static void move_to_uci_notation(const Chess_Move* move, char* uci_str) {
                 uci_str[4] = 'b';
             } break;
             case CHESS_PIECE_KNIGHT: {
-                uci_str[4] = 'k';
+                uci_str[4] = 'n';
             } break;
             default: {
                 assert(0);
             } break;
         }
         uci_str[5] = '\0';
+    } else {
+        uci_str[4] = '\0';
     }
-
-    uci_str[4] = '\0';
 }
 
 static void uci_notation_to_move(const char* uci_str, Chess_Move* move) {
@@ -830,20 +839,36 @@ static int pawn_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
         candidate_position = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 1, position.x) : CHESS_POS(position.y - 1, position.x);
         if (chess_position_is_within_bounds(candidate_position)) {
             const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
-            candidate_move = chess_move_no_promotion(position, candidate_position);
             if (candidate_piece->type == CHESS_PIECE_EMPTY) {
-                available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                    need_to_check_if_king_is_exposed, &candidate_move);
-
-                // If we can advance 1 tile, then we can also check for two tiles
-                candidate_position = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 2, position.x) : CHESS_POS(position.y - 2, position.x);
-                int is_pawn_first_move = current_piece->color == CHESS_COLOR_WHITE ? position.y == 1 : position.y == CHESS_BOARD_HEIGHT - 2;
-                if (is_pawn_first_move) {
-                    candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+                if ((current_piece->color == CHESS_COLOR_WHITE && candidate_position.y == 7) || (current_piece->color == CHESS_COLOR_BLACK && candidate_position.y == 0)) {
+                    // If the pawn is moving to the last rank, we need to promote it!
+                    candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_QUEEN);
+                    available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                        need_to_check_if_king_is_exposed, &candidate_move);
+                    candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_KNIGHT);
+                    available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                        need_to_check_if_king_is_exposed, &candidate_move);
+                    candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_ROOK);
+                    available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                        need_to_check_if_king_is_exposed, &candidate_move);
+                    candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_BISHOP);
+                    available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                        need_to_check_if_king_is_exposed, &candidate_move);
+                } else {
                     candidate_move = chess_move_no_promotion(position, candidate_position);
-                    if (candidate_piece->type == CHESS_PIECE_EMPTY) {
-                        available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                            need_to_check_if_king_is_exposed, &candidate_move);
+                    available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                        need_to_check_if_king_is_exposed, &candidate_move);
+
+                    // Check if we can also advance two squares
+                    candidate_position = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 2, position.x) : CHESS_POS(position.y - 2, position.x);
+                    int is_pawn_first_move = current_piece->color == CHESS_COLOR_WHITE ? position.y == 1 : position.y == CHESS_BOARD_HEIGHT - 2;
+                    if (is_pawn_first_move) {
+                        candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
+                        candidate_move = chess_move_no_promotion(position, candidate_position);
+                        if (candidate_piece->type == CHESS_PIECE_EMPTY) {
+                            available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                                need_to_check_if_king_is_exposed, &candidate_move);
+                        }
                     }
                 }
             }
@@ -853,20 +878,50 @@ static int pawn_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
     candidate_position = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 1, position.x + 1) : CHESS_POS(position.y - 1, position.x + 1);
     if (chess_position_is_within_bounds(candidate_position)) {
         const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
-        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type != CHESS_PIECE_EMPTY && candidate_piece->color != current_piece->color) {
-            available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, &candidate_move);
+            if ((current_piece->color == CHESS_COLOR_WHITE && candidate_position.y == 7) || (current_piece->color == CHESS_COLOR_BLACK && candidate_position.y == 0)) {
+                candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_QUEEN);
+                available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                    need_to_check_if_king_is_exposed, &candidate_move);
+                candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_KNIGHT);
+                available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                    need_to_check_if_king_is_exposed, &candidate_move);
+                candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_ROOK);
+                available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                    need_to_check_if_king_is_exposed, &candidate_move);
+                candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_BISHOP);
+                available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                    need_to_check_if_king_is_exposed, &candidate_move);
+            } else {
+                candidate_move = chess_move_no_promotion(position, candidate_position);
+                available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                    need_to_check_if_king_is_exposed, &candidate_move);
+            }
         }
     }
     
     candidate_position = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 1, position.x - 1) : CHESS_POS(position.y - 1, position.x - 1);
     if (chess_position_is_within_bounds(candidate_position)) {
         const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_position.y][candidate_position.x];
-        candidate_move = chess_move_no_promotion(position, candidate_position);
         if (candidate_piece->type != CHESS_PIECE_EMPTY && candidate_piece->color != current_piece->color) {
-            available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
-                need_to_check_if_king_is_exposed, &candidate_move);
+            if ((current_piece->color == CHESS_COLOR_WHITE && candidate_position.y == 7) || (current_piece->color == CHESS_COLOR_BLACK && candidate_position.y == 0)) {
+                candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_QUEEN);
+                available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                    need_to_check_if_king_is_exposed, &candidate_move);
+                candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_KNIGHT);
+                available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                    need_to_check_if_king_is_exposed, &candidate_move);
+                candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_ROOK);
+                available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                    need_to_check_if_king_is_exposed, &candidate_move);
+                candidate_move = chess_move_with_promotion(position, candidate_position, CHESS_PIECE_BISHOP);
+                available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                    need_to_check_if_king_is_exposed, &candidate_move);
+            } else {
+                candidate_move = chess_move_no_promotion(position, candidate_position);
+                available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                    need_to_check_if_king_is_exposed, &candidate_move);
+            }
         }
     }
 
