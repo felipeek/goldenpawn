@@ -4,7 +4,7 @@
 #include <assert.h>
 
 static int available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_pawn_non_attacking_moves);
+    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves);
 
 static void king_positions_fill(Chess_Context* chess_ctx) {
     int found_white_king = 0, found_black_king = 0;
@@ -33,19 +33,16 @@ static Chess_Piece empty_piece() {
     return piece;
 }
 
-static int is_king_being_attacked(Chess_Context* chess_ctx, Chess_Board_Position king_position) {
-    Chess_Piece* king = &chess_ctx->board[king_position.y][king_position.x];
-
-    // Determine whether there is a move that attacks the king.
+static int is_square_being_attacked(const Chess_Context* chess_ctx, Chess_Board_Position position, Chess_Color by_color) {
     for (int y = 0; y < CHESS_BOARD_HEIGHT; ++y) {
         for (int x = 0; x < CHESS_BOARD_WIDTH; ++x) {
-            Chess_Piece* current_piece = &chess_ctx->board[y][x];
-            if (current_piece->type != CHESS_PIECE_EMPTY && current_piece->color != king->color) {
+            const Chess_Piece* current_piece = &chess_ctx->board[y][x];
+            if (current_piece->type != CHESS_PIECE_EMPTY && current_piece->color == by_color) {
                 Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
                 int available_moves_num = available_moves_get(chess_ctx, CHESS_POS(y, x), available_moves, 1, 1);
 
                 for (int k = 0; k < available_moves_num; ++k) {
-                    if (available_moves[k].x == king_position.x && available_moves[k].y == king_position.y) {
+                    if (available_moves[k].x == position.x && available_moves[k].y == position.y) {
                         return 1;
                     }
                 }
@@ -56,18 +53,106 @@ static int is_king_being_attacked(Chess_Context* chess_ctx, Chess_Board_Position
     return 0;
 }
 
-static void chess_context_update(Chess_Context* chess_ctx) {
-    king_positions_fill(chess_ctx);
-    chess_ctx->white_state.is_king_under_attack = is_king_being_attacked(chess_ctx, chess_ctx->white_state.king_position);
-    chess_ctx->black_state.is_king_under_attack = is_king_being_attacked(chess_ctx, chess_ctx->black_state.king_position);
-}
-
+// Note: this function MUST support chess_ctx == new_ctx !
 void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, Chess_Board_Position from, Chess_Board_Position to) {
     *new_ctx = *chess_ctx;
     Chess_Piece* piece = &new_ctx->board[from.y][from.x];
-    new_ctx->board[to.y][to.x] = *piece;
-    new_ctx->board[from.y][from.x] = empty_piece();
-    chess_context_update(new_ctx);
+
+    // Update castles
+    if (chess_ctx->white_state.short_castling_available) {
+        if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE) {
+            // King is being moved.
+            new_ctx->white_state.short_castling_available = 0;
+        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_WHITE && from.x == 7 && from.y == 0) {
+            // Rook is being moved.
+            new_ctx->white_state.short_castling_available = 0;
+        }
+    }
+    if (chess_ctx->white_state.long_castling_available) {
+        if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE) {
+            // King is being moved.
+            new_ctx->white_state.long_castling_available = 0;
+        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_WHITE && from.x == 0 && from.y == 0) {
+            // Rook is being moved.
+            new_ctx->white_state.long_castling_available = 0;
+        }
+    }
+    if (chess_ctx->black_state.short_castling_available) {
+        if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK) {
+            // King is being moved.
+            new_ctx->black_state.short_castling_available = 0;
+        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_BLACK && from.x == 7 && from.y == 7) {
+            // Rook is being moved.
+            new_ctx->black_state.short_castling_available = 0;
+        }
+    }
+    if (chess_ctx->black_state.long_castling_available) {
+        if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK) {
+            // King is being moved.
+            new_ctx->black_state.long_castling_available = 0;
+        } else if (piece->type == CHESS_PIECE_ROOK && piece->color == CHESS_COLOR_BLACK && from.x == 0 && from.y == 7) {
+            // Rook is being moved.
+            new_ctx->black_state.long_castling_available = 0;
+        }
+    }
+
+    if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE && from.x == 4 && from.y == 0 && to.x == 6 && to.y == 0) {
+        // Special case: white castles short
+        // We do not check if the rook is there... we trust the GUI.
+
+        // move the king
+        new_ctx->board[0][6] = *piece;
+        new_ctx->board[0][4] = empty_piece();
+
+        // move the rook
+        Chess_Piece* rook = &new_ctx->board[0][7];
+        new_ctx->board[0][5] = *rook;
+        new_ctx->board[0][7] = empty_piece();
+    } else if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE && from.x == 4 && from.y == 0 && to.x == 2 && to.y == 0) {
+        // Special case: white castles long
+        // We do not check if the rook is there... we trust the GUI.
+
+        // move the king
+        new_ctx->board[0][2] = *piece;
+        new_ctx->board[0][4] = empty_piece();
+
+        // move the rook
+        Chess_Piece* rook = &new_ctx->board[0][0];
+        new_ctx->board[0][3] = *rook;
+        new_ctx->board[0][0] = empty_piece();
+    } else if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK && from.x == 4 && from.y == 7 && to.x == 6 && to.y == 7) {
+        // Special case: black castles short
+        // We do not check if the rook is there... we trust the GUI.
+
+        // move the king
+        new_ctx->board[7][6] = *piece;
+        new_ctx->board[7][4] = empty_piece();
+
+        // move the rook
+        Chess_Piece* rook = &new_ctx->board[7][7];
+        new_ctx->board[7][5] = *rook;
+        new_ctx->board[7][7] = empty_piece();
+    } else if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK && from.x == 4 && from.y == 7 && to.x == 2 && to.y == 7) {
+        // Special case: black castles long
+        // We do not check if the rook is there... we trust the GUI.
+
+        // move the king
+        new_ctx->board[7][2] = *piece;
+        new_ctx->board[7][4] = empty_piece();
+
+        // move the rook
+        Chess_Piece* rook = &new_ctx->board[7][0];
+        new_ctx->board[7][3] = *rook;
+        new_ctx->board[7][0] = empty_piece();
+    } else {
+        new_ctx->board[to.y][to.x] = *piece;
+        new_ctx->board[from.y][from.x] = empty_piece();
+    }
+
+    king_positions_fill(new_ctx);
+    new_ctx->white_state.is_king_under_attack = is_square_being_attacked(new_ctx, new_ctx->white_state.king_position, CHESS_COLOR_BLACK);
+    new_ctx->black_state.is_king_under_attack = is_square_being_attacked(new_ctx, new_ctx->black_state.king_position, CHESS_COLOR_WHITE);
+
     new_ctx->current_turn = !new_ctx->current_turn;
 }
 
@@ -193,13 +278,16 @@ void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const
 
     chess_board_reset(chess_ctx);
 
+    chess_ctx->white_state.long_castling_available = 1;
+    chess_ctx->white_state.short_castling_available = 1;
+    chess_ctx->black_state.long_castling_available = 1;
+    chess_ctx->black_state.short_castling_available = 1;
+
     Chess_Board_Position from, to;
     for (int i = 2; i < argc; ++i) {
         assert(strlen(argv[i]) == 4);
         uci_notation_to_position(argv[i], &from, &to);
-        chess_ctx->board[to.y][to.x] = chess_ctx->board[from.y][from.x];
-        chess_ctx->board[from.y][from.x].type = CHESS_PIECE_EMPTY;
-        chess_ctx->board[from.y][from.x].color = CHESS_COLOR_COLORLESS;
+        chess_move_piece(chess_ctx, chess_ctx, from, to);
     }
 
     if ((argc - 2) % 2 == 0) {
@@ -207,8 +295,6 @@ void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const
     } else {
         chess_ctx->current_turn = CHESS_COLOR_BLACK;
     }
-
-    chess_context_update(chess_ctx);
 }
 
 void chess_get_random_move(const Chess_Context* chess_ctx, char* move) {
@@ -227,6 +313,38 @@ void chess_get_random_move(const Chess_Context* chess_ctx, char* move) {
     #endif
 
     Chess_Board_Position from, to;
+
+    //////////////// TEST ////////////////
+
+    const Chess_Piece* piece = &chess_ctx->board[0][4];
+    if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE) {
+        available_moves_num = available_moves_get(chess_ctx, CHESS_POS(0, 4), available_moves, 0, 0);
+        for (int i = 0; i < available_moves_num; ++i) {
+            Chess_Board_Position current = available_moves[i];
+            if (current.x == 6 && current.y == 0) {
+                log_debug("white short castling is available.");
+            } else if (current.x == 2 && current.y == 0) {
+                log_debug("white long castling is available.");
+            }
+        }
+    }
+
+    piece = &chess_ctx->board[7][4];
+    if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK) {
+        available_moves_num = available_moves_get(chess_ctx, CHESS_POS(7, 4), available_moves, 0, 0);
+        for (int i = 0; i < available_moves_num; ++i) {
+            Chess_Board_Position current = available_moves[i];
+            if (current.x == 6 && current.y == 7) {
+                log_debug("black short castling is available.");
+            } else if (current.x == 2 && current.y == 7) {
+                log_debug("black long castling is available.");
+            }
+        }
+    }
+
+    available_moves_num = 0;
+
+    ////////////////////////////////////
 
     while (1) {
         int h = rand() % CHESS_BOARD_HEIGHT;
@@ -494,7 +612,7 @@ static int queen_available_moves_get(const Chess_Context* chess_ctx, Chess_Board
 }
 
 static int king_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed) {
+    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves) {
     const Chess_Piece* current_piece = &chess_ctx->board[position.y][position.x];
     int available_moves_num = 0;
     assert(current_piece->type == CHESS_PIECE_KING);
@@ -582,11 +700,50 @@ static int king_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
         }
     }
 
+    if (!discard_non_attacking_moves) {
+        // Castling moves
+        if (current_piece->color == CHESS_COLOR_WHITE) {
+            if (!chess_ctx->white_state.is_king_under_attack) {
+                if (chess_ctx->white_state.short_castling_available) {
+                    if (chess_ctx->board[0][5].type == CHESS_PIECE_EMPTY && chess_ctx->board[0][6].type == CHESS_PIECE_EMPTY) {
+                        if (!is_square_being_attacked(chess_ctx, CHESS_POS(0, 5), CHESS_COLOR_BLACK) && !is_square_being_attacked(chess_ctx, CHESS_POS(0, 6), CHESS_COLOR_BLACK)) {
+                            available_moves[available_moves_num++] = CHESS_POS(0, 6);
+                        }
+                    }
+                }
+                if (chess_ctx->white_state.long_castling_available) {
+                    if (chess_ctx->board[0][3].type == CHESS_PIECE_EMPTY && chess_ctx->board[0][2].type == CHESS_PIECE_EMPTY && chess_ctx->board[0][1].type == CHESS_PIECE_EMPTY) {
+                        if (!is_square_being_attacked(chess_ctx, CHESS_POS(0, 3), CHESS_COLOR_BLACK) && !is_square_being_attacked(chess_ctx, CHESS_POS(0, 2), CHESS_COLOR_BLACK)) {
+                            available_moves[available_moves_num++] = CHESS_POS(0, 2);
+                        }
+                    }
+                }
+            }
+        } else {
+            if (!chess_ctx->black_state.is_king_under_attack) {
+                if (chess_ctx->black_state.short_castling_available) {
+                    if (chess_ctx->board[7][5].type == CHESS_PIECE_EMPTY && chess_ctx->board[7][6].type == CHESS_PIECE_EMPTY) {
+                        if (!is_square_being_attacked(chess_ctx, CHESS_POS(7, 5), CHESS_COLOR_WHITE) && !is_square_being_attacked(chess_ctx, CHESS_POS(7, 6), CHESS_COLOR_WHITE)) {
+                            available_moves[available_moves_num++] = CHESS_POS(7, 6);
+                        }
+                    }
+                }
+                if (chess_ctx->black_state.long_castling_available) {
+                    if (chess_ctx->board[7][3].type == CHESS_PIECE_EMPTY && chess_ctx->board[7][2].type == CHESS_PIECE_EMPTY && chess_ctx->board[7][1].type == CHESS_PIECE_EMPTY) {
+                        if (!is_square_being_attacked(chess_ctx, CHESS_POS(7, 3), CHESS_COLOR_WHITE) && !is_square_being_attacked(chess_ctx, CHESS_POS(7, 2), CHESS_COLOR_WHITE)) {
+                            available_moves[available_moves_num++] = CHESS_POS(7, 2);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     return available_moves_num;
 }
 
 static int pawn_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_pawn_non_attacking_moves) {
+    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves) {
     const Chess_Piece* current_piece = &chess_ctx->board[position.y][position.x];
     int available_moves_num = 0;
     assert(current_piece->type == CHESS_PIECE_PAWN);
@@ -596,7 +753,7 @@ static int pawn_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
 
     Chess_Board_Position candidate_move;
 
-    if (!discard_pawn_non_attacking_moves) {
+    if (!discard_non_attacking_moves) {
         candidate_move = current_piece->color == CHESS_COLOR_WHITE ? CHESS_POS(position.y + 1, position.x) : CHESS_POS(position.y - 1, position.x);
         if (chess_position_is_within_bounds(candidate_move)) {
             const Chess_Piece* candidate_piece = &chess_ctx->board[candidate_move.y][candidate_move.x];
@@ -642,18 +799,18 @@ static int pawn_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
 }
 
 static int available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
-    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_pawn_non_attack_moves) {
+    Chess_Board_Position available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves) {
     const Chess_Piece* piece = &chess_ctx->board[position.y][position.x];
     assert(piece->color != CHESS_COLOR_COLORLESS);
     assert(piece->type != CHESS_PIECE_EMPTY);
 
     switch(piece->type) {
-        case CHESS_PIECE_KING: return king_available_moves_get(chess_ctx, position, available_moves, king_can_be_exposed);
+        case CHESS_PIECE_KING: return king_available_moves_get(chess_ctx, position, available_moves, king_can_be_exposed, discard_non_attacking_moves);
         case CHESS_PIECE_QUEEN: return queen_available_moves_get(chess_ctx, position, available_moves, king_can_be_exposed);
         case CHESS_PIECE_ROOK: return rook_available_moves_get(chess_ctx, position, available_moves, king_can_be_exposed);
         case CHESS_PIECE_BISHOP: return bishop_available_moves_get(chess_ctx, position, available_moves, king_can_be_exposed);
         case CHESS_PIECE_KNIGHT: return knight_available_moves_get(chess_ctx, position, available_moves, king_can_be_exposed);
-        case CHESS_PIECE_PAWN: return pawn_available_moves_get(chess_ctx, position, available_moves, king_can_be_exposed, discard_pawn_non_attack_moves);
+        case CHESS_PIECE_PAWN: return pawn_available_moves_get(chess_ctx, position, available_moves, king_can_be_exposed, discard_non_attacking_moves);
         default: assert(0);
     }
 }

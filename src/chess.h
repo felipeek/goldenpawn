@@ -35,6 +35,8 @@ typedef struct {
 typedef struct {
     Chess_Board_Position king_position;
     int is_king_under_attack;
+    int short_castling_available;
+    int long_castling_available;
 } Chess_Color_State;
 
 typedef struct {
