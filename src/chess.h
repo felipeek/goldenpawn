@@ -33,12 +33,19 @@ typedef struct {
 } Chess_Piece;
 
 typedef struct {
+    Chess_Board_Position king_position;
+    int is_king_under_attack;
+} Chess_Color_State;
+
+typedef struct {
     Chess_Piece board[CHESS_BOARD_HEIGHT][CHESS_BOARD_WIDTH];
     Chess_Color current_turn;
+    Chess_Color_State white_state;
+    Chess_Color_State black_state;
 } Chess_Context;
 
-void chess_init(Chess_Context* chess_ctx);
-void chess_board_position_set_from_input(Chess_Context* chess_ctx, int argc, const char** argv);
-void chess_get_random_move(Chess_Context* chess_ctx, char* move);
+void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const char** argv);
+void chess_get_random_move(const Chess_Context* chess_ctx, char* move);
+void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, Chess_Board_Position from, Chess_Board_Position to);
 
 #endif

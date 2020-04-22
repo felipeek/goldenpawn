@@ -42,10 +42,9 @@ static void command_send(char* command) {
     fflush(stdout);
 };
 
-void io_init(IO_Context* io_ctx, Chess_Context* chess_ctx) {
+void io_init(IO_Context* io_ctx) {
     io_ctx->buffer = malloc(sizeof(char) * IO_BUFFER_SIZE);
     io_ctx->argv = malloc(sizeof(char*) * IO_ARGV_SIZE);
-    io_ctx->chess_ctx = chess_ctx;
 }
 
 void io_start(IO_Context* io_ctx) {
@@ -64,11 +63,11 @@ void io_start(IO_Context* io_ctx) {
             command_send("readyok");
         } else if (!strcmp(io_ctx->argv[0], "ucinewgame")) {
         } else if (!strcmp(io_ctx->argv[0], "position")) {
-            chess_board_position_set_from_input(io_ctx->chess_ctx, argc - 1, io_ctx->argv + 1);
+            chess_context_from_position_input(&io_ctx->chess_ctx, argc - 1, io_ctx->argv + 1);
         } else if (!strcmp(io_ctx->argv[0], "go")) {
             char buffer[256];
             strcpy(buffer, "bestmove ");
-            chess_get_random_move(io_ctx->chess_ctx, buffer + strlen(buffer));
+            chess_get_random_move(&io_ctx->chess_ctx, buffer + strlen(buffer));
             command_send(buffer);
         }
     }
