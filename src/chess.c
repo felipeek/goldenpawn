@@ -113,6 +113,15 @@ void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, co
         }
     }
 
+    // Update en passant
+    if (piece->type == CHESS_PIECE_PAWN && abs(move->to.y - move->from.y) == 2) {
+        new_ctx->en_passant_info.available = 1;
+        new_ctx->en_passant_info.target = piece->color == CHESS_COLOR_WHITE ? CHESS_POS(move->to.y - 1, move->to.x) : CHESS_POS(move->to.y + 1, move->to.x);
+        new_ctx->en_passant_info.pawn_position = move->to;
+    } else {
+        new_ctx->en_passant_info.available = 0;
+    }
+
     if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE && move->from.x == 4 && move->from.y == 0 && move->to.x == 6 && move->to.y == 0) {
         // Special case: white castles short
         // We do not check if the rook is there... we trust the GUI.
@@ -161,6 +170,13 @@ void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, co
         Chess_Piece* rook = &new_ctx->board[7][0];
         new_ctx->board[7][3] = *rook;
         new_ctx->board[7][0] = empty_piece();
+    } else if (piece->type == CHESS_PIECE_PAWN && move->to.x != move->from.x && new_ctx->board[move->to.y][move->to.x].type == CHESS_PIECE_EMPTY) {
+        // if we are moving a pawn diagonally to a square that contains no piece, we certainly have an en passant case.
+        Chess_Board_Position eaten_pawn_position = piece->color == CHESS_COLOR_WHITE ? CHESS_POS(move->to.y - 1, move->to.x) : CHESS_POS(move->to.y + 1, move->to.x);
+        assert(new_ctx->board[eaten_pawn_position.y][eaten_pawn_position.x].type == CHESS_PIECE_PAWN && new_ctx->board[eaten_pawn_position.y][eaten_pawn_position.x].color != piece->color);
+        new_ctx->board[eaten_pawn_position.y][eaten_pawn_position.x] = empty_piece();
+        new_ctx->board[move->to.y][move->to.x] = *piece;
+        new_ctx->board[move->from.y][move->from.x] = empty_piece();
     } else {
         new_ctx->board[move->to.y][move->to.x] = *piece;
         new_ctx->board[move->from.y][move->from.x] = empty_piece();
@@ -334,6 +350,7 @@ void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const
     chess_ctx->white_state.short_castling_available = 1;
     chess_ctx->black_state.long_castling_available = 1;
     chess_ctx->black_state.short_castling_available = 1;
+    chess_ctx->en_passant_info.available = 0;
 
     Chess_Move move;
     for (int i = 2; i < argc; ++i) {
@@ -401,7 +418,7 @@ void chess_get_random_move(const Chess_Context* chess_ctx, char* move_str) {
         int h = rand() % CHESS_BOARD_HEIGHT;
         int w = rand() % CHESS_BOARD_WIDTH;
         Chess_Board_Position pos = CHESS_POS(h, w);
-        if (chess_ctx->board[pos.y][pos.x].type != CHESS_PIECE_EMPTY &&
+        if (chess_ctx->board[pos.y][pos.x].type == CHESS_PIECE_PAWN &&
             chess_ctx->board[pos.y][pos.x].color == chess_ctx->current_turn) {
             available_moves_num = available_moves_get(chess_ctx, pos, available_moves, 0, 0);
             if (available_moves_num > 0) {
@@ -897,6 +914,12 @@ static int pawn_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
                 available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
                     need_to_check_if_king_is_exposed, &candidate_move);
             }
+        } else if (candidate_piece->type == CHESS_PIECE_EMPTY && chess_ctx->en_passant_info.available &&
+            chess_ctx->en_passant_info.target.y == candidate_position.y && chess_ctx->en_passant_info.target.x == candidate_position.x){
+            // EN PASSANT
+            candidate_move = chess_move_no_promotion(position, candidate_position);
+            available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
     
@@ -922,10 +945,14 @@ static int pawn_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_
                 available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
                     need_to_check_if_king_is_exposed, &candidate_move);
             }
+        } else if (candidate_piece->type == CHESS_PIECE_EMPTY && chess_ctx->en_passant_info.available &&
+            chess_ctx->en_passant_info.target.y == candidate_position.y && chess_ctx->en_passant_info.target.x == candidate_position.x){
+            // EN PASSANT
+            candidate_move = chess_move_no_promotion(position, candidate_position);
+            available_moves_num = available_move_add_to_list_if_valid(chess_ctx, available_moves, available_moves_num,
+                need_to_check_if_king_is_exposed, &candidate_move);
         }
     }
-
-    // @TODO: en passant
 
     return available_moves_num;
 }

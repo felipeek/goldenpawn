@@ -47,10 +47,17 @@ typedef struct {
 } Chess_Color_State;
 
 typedef struct {
+    int available;
+    Chess_Board_Position target;
+    Chess_Board_Position pawn_position;
+} Chess_En_Passant_Information;
+
+typedef struct {
     Chess_Piece board[CHESS_BOARD_HEIGHT][CHESS_BOARD_WIDTH];
     Chess_Color current_turn;
     Chess_Color_State white_state;
     Chess_Color_State black_state;
+    Chess_En_Passant_Information en_passant_info;
 } Chess_Context;
 
 void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const char** argv);
