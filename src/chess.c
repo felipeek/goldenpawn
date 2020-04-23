@@ -1,7 +1,9 @@
 #include "chess.h"
 #include "logger.h"
+#include "io.h"
 #include <string.h>
 #include <assert.h>
+#include <math.h>
 
 static int available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
     Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH], int king_can_be_exposed, int discard_non_attacking_moves);
@@ -190,7 +192,7 @@ void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, co
     new_ctx->white_state.is_king_under_attack = is_square_being_attacked(new_ctx, new_ctx->white_state.king_position, CHESS_COLOR_BLACK);
     new_ctx->black_state.is_king_under_attack = is_square_being_attacked(new_ctx, new_ctx->black_state.king_position, CHESS_COLOR_WHITE);
 
-    new_ctx->current_turn = !new_ctx->current_turn;
+    new_ctx->current_turn = new_ctx->current_turn == CHESS_COLOR_WHITE ? CHESS_COLOR_BLACK : CHESS_COLOR_WHITE;
 }
 
 static int chess_position_is_within_bounds(Chess_Board_Position position) {
@@ -208,56 +210,6 @@ static int is_king_exposed_if_piece_is_moved(const Chess_Context* chess_ctx, con
     chess_move_piece(chess_ctx, &ctx_without_piece, move);
     const Chess_Piece* piece = &ctx_without_piece.board[move->to.y][move->to.x];
     return piece->color == CHESS_COLOR_WHITE ? ctx_without_piece.white_state.is_king_under_attack : ctx_without_piece.black_state.is_king_under_attack;
-}
-
-static void move_to_uci_notation(const Chess_Move* move, char* uci_str) {
-    uci_str[0] = move->from.x + 'a';
-    uci_str[1] = move->from.y + '0' + 1;
-    uci_str[2] = move->to.x + 'a';
-    uci_str[3] = move->to.y + '0' + 1;
-
-    if (move->will_promote) {
-        switch (move->promotion_type) {
-            case CHESS_PIECE_QUEEN: {
-                uci_str[4] = 'q';
-            } break;
-            case CHESS_PIECE_ROOK: {
-                uci_str[4] = 'r';
-            } break;
-            case CHESS_PIECE_BISHOP: {
-                uci_str[4] = 'b';
-            } break;
-            case CHESS_PIECE_KNIGHT: {
-                uci_str[4] = 'n';
-            } break;
-            default: {
-                assert(0);
-            } break;
-        }
-        uci_str[5] = '\0';
-    } else {
-        uci_str[4] = '\0';
-    }
-}
-
-static void uci_notation_to_move(const char* uci_str, Chess_Move* move) {
-    int uci_str_len = strlen(uci_str);
-    move->from = CHESS_POS(uci_str[1] - '0' - 1, uci_str[0] - 'a');
-    move->to = CHESS_POS(uci_str[3] - '0' - 1, uci_str[2] - 'a');
-
-    // Pawn reached last rank.
-    if (uci_str_len == 5) {
-        switch(uci_str[4]) {
-            case 'b': move->promotion_type = CHESS_PIECE_BISHOP; break;
-            case 'n': move->promotion_type = CHESS_PIECE_KNIGHT; break;
-            case 'q': move->promotion_type = CHESS_PIECE_QUEEN; break;
-            case 'r': move->promotion_type = CHESS_PIECE_ROOK; break;
-            default: assert(0);
-        }
-        move->will_promote = 1;
-    } else {
-        move->will_promote = 0;
-    }
 }
 
 static void chess_board_reset(Chess_Context* chess_ctx) {
@@ -355,7 +307,7 @@ void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const
     Chess_Move move;
     for (int i = 2; i < argc; ++i) {
         assert(strlen(argv[i]) == 4 || strlen(argv[i]) == 5);
-        uci_notation_to_move(argv[i], &move);
+        io_uci_notation_to_move(argv[i], &move);
         chess_move_piece(chess_ctx, chess_ctx, &move);
     }
 
@@ -364,72 +316,6 @@ void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const
     } else {
         chess_ctx->current_turn = CHESS_COLOR_BLACK;
     }
-}
-
-void chess_get_random_move(const Chess_Context* chess_ctx, char* move_str) {
-    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
-    int available_moves_num = 0;
-
-    #if 0
-    for (int y = 0; y < CHESS_BOARD_HEIGHT; ++y) {
-        for (int x = 0; x < CHESS_BOARD_WIDTH; ++x) {
-            Chess_Piece* piece = &chess_ctx->board[y][x];
-            if (piece->type != CHESS_PIECE_EMPTY) {
-                available_moves_num += available_moves_get(chess_ctx, CHESS_POS(y, x), available_moves + available_moves_num);
-            }
-        }
-    }
-    #endif
-
-    //////////////// TEST ////////////////
-
-    const Chess_Piece* piece = &chess_ctx->board[0][4];
-    if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_WHITE) {
-        available_moves_num = available_moves_get(chess_ctx, CHESS_POS(0, 4), available_moves, 0, 0);
-        for (int i = 0; i < available_moves_num; ++i) {
-            Chess_Move current = available_moves[i];
-            if (current.to.x == 6 && current.to.y == 0) {
-                log_debug("white short castling is available.");
-            } else if (current.to.x == 2 && current.to.y == 0) {
-                log_debug("white long castling is available.");
-            }
-        }
-    }
-
-    piece = &chess_ctx->board[7][4];
-    if (piece->type == CHESS_PIECE_KING && piece->color == CHESS_COLOR_BLACK) {
-        available_moves_num = available_moves_get(chess_ctx, CHESS_POS(7, 4), available_moves, 0, 0);
-        for (int i = 0; i < available_moves_num; ++i) {
-            Chess_Move current = available_moves[i];
-            if (current.to.x == 6 && current.to.y == 7) {
-                log_debug("black short castling is available.");
-            } else if (current.to.x == 2 && current.to.y == 7) {
-                log_debug("black long castling is available.");
-            }
-        }
-    }
-
-    available_moves_num = 0;
-
-    ////////////////////////////////////
-
-    Chess_Move move;
-    while (1) {
-        int h = rand() % CHESS_BOARD_HEIGHT;
-        int w = rand() % CHESS_BOARD_WIDTH;
-        Chess_Board_Position pos = CHESS_POS(h, w);
-        if (chess_ctx->board[pos.y][pos.x].type == CHESS_PIECE_PAWN &&
-            chess_ctx->board[pos.y][pos.x].color == chess_ctx->current_turn) {
-            available_moves_num = available_moves_get(chess_ctx, pos, available_moves, 0, 0);
-            if (available_moves_num > 0) {
-                int r = rand() % available_moves_num;
-                move = available_moves[r];
-                break;
-            }
-        }
-    }
-
-    move_to_uci_notation(&move, move_str);
 }
 
 static int available_move_add_to_list_if_valid(const Chess_Context* chess_ctx,
@@ -972,4 +858,9 @@ static int available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Posit
         case CHESS_PIECE_PAWN: return pawn_available_moves_get(chess_ctx, position, available_moves, king_can_be_exposed, discard_non_attacking_moves);
         default: assert(0);
     }
+}
+
+int chess_available_moves_get(const Chess_Context* chess_ctx, Chess_Board_Position position,
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH]) {
+    return available_moves_get(chess_ctx, position, available_moves, 0, 0);
 }

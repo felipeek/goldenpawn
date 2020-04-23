@@ -1,9 +1,11 @@
 #include "io.h"
 #include "logger.h"
+#include "ai.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <assert.h>
 
 #define IO_BUFFER_SIZE 4096
 #define IO_ARGV_SIZE 256
@@ -67,8 +69,58 @@ void io_start(IO_Context* io_ctx) {
         } else if (!strcmp(io_ctx->argv[0], "go")) {
             char buffer[256];
             strcpy(buffer, "bestmove ");
-            chess_get_random_move(&io_ctx->chess_ctx, buffer + strlen(buffer));
+            ai_get_best_move(&io_ctx->chess_ctx, buffer + strlen(buffer));
             command_send(buffer);
         }
+    }
+}
+
+void io_move_to_uci_notation(const Chess_Move* move, char* uci_str) {
+    uci_str[0] = move->from.x + 'a';
+    uci_str[1] = move->from.y + '0' + 1;
+    uci_str[2] = move->to.x + 'a';
+    uci_str[3] = move->to.y + '0' + 1;
+
+    if (move->will_promote) {
+        switch (move->promotion_type) {
+            case CHESS_PIECE_QUEEN: {
+                uci_str[4] = 'q';
+            } break;
+            case CHESS_PIECE_ROOK: {
+                uci_str[4] = 'r';
+            } break;
+            case CHESS_PIECE_BISHOP: {
+                uci_str[4] = 'b';
+            } break;
+            case CHESS_PIECE_KNIGHT: {
+                uci_str[4] = 'n';
+            } break;
+            default: {
+                assert(0);
+            } break;
+        }
+        uci_str[5] = '\0';
+    } else {
+        uci_str[4] = '\0';
+    }
+}
+
+void io_uci_notation_to_move(const char* uci_str, Chess_Move* move) {
+    int uci_str_len = strlen(uci_str);
+    move->from = CHESS_POS(uci_str[1] - '0' - 1, uci_str[0] - 'a');
+    move->to = CHESS_POS(uci_str[3] - '0' - 1, uci_str[2] - 'a');
+
+    // Pawn reached last rank.
+    if (uci_str_len == 5) {
+        switch(uci_str[4]) {
+            case 'b': move->promotion_type = CHESS_PIECE_BISHOP; break;
+            case 'n': move->promotion_type = CHESS_PIECE_KNIGHT; break;
+            case 'q': move->promotion_type = CHESS_PIECE_QUEEN; break;
+            case 'r': move->promotion_type = CHESS_PIECE_ROOK; break;
+            default: assert(0);
+        }
+        move->will_promote = 1;
+    } else {
+        move->will_promote = 0;
     }
 }
