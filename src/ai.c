@@ -34,17 +34,15 @@ static float ai_evaluate_position(const Chess_Context* chess_ctx, Chess_Color co
     return evaluation;
 }
 
-static float ai_move_and_evaluate(const Chess_Context* chess_ctx, const Chess_Move* move, Chess_Color color) {
-    Chess_Context new_ctx;
-    chess_move_piece(chess_ctx, &new_ctx, move);
-    return ai_evaluate_position(&new_ctx, color);
-}
+static float min(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* chosen_move, int depth);
+static float max(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* chosen_move, int depth);
 
-static float min(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* chosen_move);
-static float max(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* chosen_move) {
+static float max(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* chosen_move, int depth) {
+    Chess_Context auxiliar_ctx;
     Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
     int available_moves_num;
     float max = -FLT_MAX;
+    float current_max;
 
     for (int y = 0; y < CHESS_BOARD_HEIGHT; ++y) {
         for (int x = 0; x < CHESS_BOARD_WIDTH; ++x) {
@@ -52,23 +50,16 @@ static float max(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* 
             if (piece->type != CHESS_PIECE_EMPTY && piece->color == chess_ctx->current_turn) {
                 available_moves_num = chess_available_moves_get(chess_ctx, CHESS_POS(y, x), available_moves);
                 for (int k = 0; k < available_moves_num; ++k) {
-                    Chess_Context min_ctx;
-                    Chess_Move m;
-                    chess_move_piece(chess_ctx, &min_ctx, &available_moves[k]);
-                    float current_max = min(&min_ctx, color, &m);
+                    chess_move_piece(chess_ctx, &auxiliar_ctx, &available_moves[k]);
+                    if (depth > 1) {
+                        current_max = min(&auxiliar_ctx, color, 0, depth - 1);
+                    } else {
+                        current_max = ai_evaluate_position(&auxiliar_ctx, color);
+                    }
 
-
-
-
-                    char buf[256];
-                    io_move_to_uci_notation(&available_moves[k], buf);
-                    log_debug("got max %f: %s", current_max, buf);
-
-
-                    //float current_max = ai_move_and_evaluate(chess_ctx, &available_moves[k], color);
-                    if (current_max > max) {
+                    if (current_max >= max) {
                         max = current_max;
-                        *chosen_move = available_moves[k];
+                        if (chosen_move) *chosen_move = available_moves[k];
                     }
                 }
             }
@@ -78,10 +69,12 @@ static float max(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* 
     return max;
 }
 
-static float min(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* chosen_move) {
+static float min(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* chosen_move, int depth) {
+    Chess_Context auxiliar_ctx;
     Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
     int available_moves_num;
     float min = FLT_MAX;
+    float current_min;
 
     for (int y = 0; y < CHESS_BOARD_HEIGHT; ++y) {
         for (int x = 0; x < CHESS_BOARD_WIDTH; ++x) {
@@ -89,10 +82,16 @@ static float min(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* 
             if (piece->type != CHESS_PIECE_EMPTY && piece->color == chess_ctx->current_turn) {
                 available_moves_num = chess_available_moves_get(chess_ctx, CHESS_POS(y, x), available_moves);
                 for (int k = 0; k < available_moves_num; ++k) {
-                    float current_min = ai_move_and_evaluate(chess_ctx, &available_moves[k], color);
-                    if (current_min < min) {
+                    chess_move_piece(chess_ctx, &auxiliar_ctx, &available_moves[k]);
+                    if (depth > 1) {
+                        current_min = max(&auxiliar_ctx, color, 0, depth - 1);
+                    } else {
+                        current_min = ai_evaluate_position(&auxiliar_ctx, color);
+                    }
+
+                    if (current_min <= min) {
                         min = current_min;
-                        *chosen_move = available_moves[k];
+                        if (chosen_move) *chosen_move = available_moves[k];
                     }
                 }
             }
@@ -104,8 +103,9 @@ static float min(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* 
 
 void ai_get_best_move(const Chess_Context* chess_ctx, char* move_str) {
     Chess_Move chosen_move;
-    max(chess_ctx, chess_ctx->current_turn, &chosen_move);
+    float evaluation = max(chess_ctx, chess_ctx->current_turn, &chosen_move, 4);
     io_move_to_uci_notation(&chosen_move, move_str);
+    log_debug("best move is %s, with evaluation of %.3f", move_str, evaluation);
 }
 
 void ai_get_random_move(const Chess_Context* chess_ctx, char* move_str) {

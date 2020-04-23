@@ -61,6 +61,7 @@ void io_start(IO_Context* io_ctx) {
         if (!strcmp(io_ctx->argv[0], "uci")) {
             command_send("id name Goldenpawn");
             command_send("id author Felipe Kersting");
+            command_send("uciok");
         } else if (!strcmp(io_ctx->argv[0], "isready")) {
             command_send("readyok");
         } else if (!strcmp(io_ctx->argv[0], "ucinewgame")) {
