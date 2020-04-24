@@ -34,76 +34,79 @@ static float ai_evaluate_position(const Chess_Context* chess_ctx, Chess_Color co
     return evaluation;
 }
 
-static float min(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* chosen_move, int depth);
-static float max(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* chosen_move, int depth);
-
-static float max(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* chosen_move, int depth) {
+static float alphabeta(const Chess_Context* chess_ctx, Chess_Color color, int depth,
+    float alpha, float beta, int maximizing_player, Chess_Move* chosen_move) {
     Chess_Context auxiliar_ctx;
     Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
     int available_moves_num;
-    float max = -FLT_MAX;
-    float current_max;
+    float child_result;
 
-    for (int y = 0; y < CHESS_BOARD_HEIGHT; ++y) {
-        for (int x = 0; x < CHESS_BOARD_WIDTH; ++x) {
-            const Chess_Piece* piece = &chess_ctx->board[y][x];
-            if (piece->type != CHESS_PIECE_EMPTY && piece->color == chess_ctx->current_turn) {
-                available_moves_num = chess_available_moves_get(chess_ctx, CHESS_POS(y, x), available_moves);
-                for (int k = 0; k < available_moves_num; ++k) {
-                    chess_move_piece(chess_ctx, &auxiliar_ctx, &available_moves[k]);
-                    if (depth > 1) {
-                        current_max = min(&auxiliar_ctx, color, 0, depth - 1);
-                    } else {
-                        current_max = ai_evaluate_position(&auxiliar_ctx, color);
-                    }
+    if (depth == 0) {
+        return ai_evaluate_position(chess_ctx, color);
+    }
+    
+    if (maximizing_player) {
+        float value = -FLT_MAX;
+        int beta_cut_off = 0;
 
-                    if (current_max >= max) {
-                        max = current_max;
-                        if (chosen_move) *chosen_move = available_moves[k];
+        for (int y = 0; y < CHESS_BOARD_HEIGHT && !beta_cut_off; ++y) {
+            for (int x = 0; x < CHESS_BOARD_WIDTH && !beta_cut_off; ++x) {
+                const Chess_Piece* piece = &chess_ctx->board[y][x];
+                if (piece->type != CHESS_PIECE_EMPTY && piece->color == chess_ctx->current_turn) {
+                    available_moves_num = chess_available_moves_get(chess_ctx, CHESS_POS(y, x), available_moves);
+                    for (int k = 0; k < available_moves_num && !beta_cut_off; ++k) {
+                        chess_move_piece(chess_ctx, &auxiliar_ctx, &available_moves[k]);
+                        child_result = alphabeta(&auxiliar_ctx, color, depth - 1, alpha, beta, 0, 0);
+                        if (child_result >= value) {
+                            value = child_result;
+                            if (chosen_move) *chosen_move = available_moves[k];
+                        }
+                        if (value > alpha) {
+                            alpha = value;
+                        }
+                        if (alpha >= beta) {
+                            beta_cut_off = 1;
+                        }
                     }
                 }
             }
         }
-    }
 
-    return max;
-}
+        return value;
+    } else {
+        float value = FLT_MAX;
+        int alpha_cut_off = 0;
 
-static float min(const Chess_Context* chess_ctx, Chess_Color color, Chess_Move* chosen_move, int depth) {
-    Chess_Context auxiliar_ctx;
-    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
-    int available_moves_num;
-    float min = FLT_MAX;
-    float current_min;
-
-    for (int y = 0; y < CHESS_BOARD_HEIGHT; ++y) {
-        for (int x = 0; x < CHESS_BOARD_WIDTH; ++x) {
-            const Chess_Piece* piece = &chess_ctx->board[y][x];
-            if (piece->type != CHESS_PIECE_EMPTY && piece->color == chess_ctx->current_turn) {
-                available_moves_num = chess_available_moves_get(chess_ctx, CHESS_POS(y, x), available_moves);
-                for (int k = 0; k < available_moves_num; ++k) {
-                    chess_move_piece(chess_ctx, &auxiliar_ctx, &available_moves[k]);
-                    if (depth > 1) {
-                        current_min = max(&auxiliar_ctx, color, 0, depth - 1);
-                    } else {
-                        current_min = ai_evaluate_position(&auxiliar_ctx, color);
-                    }
-
-                    if (current_min <= min) {
-                        min = current_min;
-                        if (chosen_move) *chosen_move = available_moves[k];
+        for (int y = 0; y < CHESS_BOARD_HEIGHT && !alpha_cut_off; ++y) {
+            for (int x = 0; x < CHESS_BOARD_WIDTH && !alpha_cut_off; ++x) {
+                const Chess_Piece* piece = &chess_ctx->board[y][x];
+                if (piece->type != CHESS_PIECE_EMPTY && piece->color == chess_ctx->current_turn) {
+                    available_moves_num = chess_available_moves_get(chess_ctx, CHESS_POS(y, x), available_moves);
+                    for (int k = 0; k < available_moves_num && !alpha_cut_off; ++k) {
+                        chess_move_piece(chess_ctx, &auxiliar_ctx, &available_moves[k]);
+                        child_result = alphabeta(&auxiliar_ctx, color, depth - 1, alpha, beta, 1, 0);
+                        if (child_result <= value) {
+                            value = child_result;
+                            if (chosen_move) *chosen_move = available_moves[k];
+                        }
+                        if (value < beta) {
+                            beta = value;
+                        }
+                        if (alpha >= beta) {
+                            alpha_cut_off = 1;
+                        }
                     }
                 }
             }
         }
-    }
 
-    return min;
+        return value;
+    }
 }
 
 void ai_get_best_move(const Chess_Context* chess_ctx, char* move_str) {
     Chess_Move chosen_move;
-    float evaluation = max(chess_ctx, chess_ctx->current_turn, &chosen_move, 4);
+    float evaluation = alphabeta(chess_ctx, chess_ctx->current_turn, 5, -FLT_MAX, FLT_MAX, 1, &chosen_move);
     io_move_to_uci_notation(&chosen_move, move_str);
     log_debug("best move is %s, with evaluation of %.3f", move_str, evaluation);
 }
