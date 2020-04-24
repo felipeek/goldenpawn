@@ -11,21 +11,42 @@ static float ai_evaluate_position(const Chess_Context* chess_ctx, Chess_Color co
             const Chess_Piece* piece = &chess_ctx->board[y][x];
             if (piece->type != CHESS_PIECE_EMPTY && piece->color == color) {
                 switch (piece->type) {
-                    case CHESS_PIECE_KING: evaluation += 1000.0f;
-                    case CHESS_PIECE_QUEEN: evaluation += 9.0f;
-                    case CHESS_PIECE_ROOK: evaluation += 5.0f;
-                    case CHESS_PIECE_BISHOP: evaluation += 3.0f;
-                    case CHESS_PIECE_KNIGHT: evaluation += 5.0f;
-                    case CHESS_PIECE_PAWN: evaluation += 1.0f;
+                    case CHESS_PIECE_KING: evaluation += 1000.0f; break;
+                    case CHESS_PIECE_QUEEN: evaluation += 9.0f; break;
+                    case CHESS_PIECE_ROOK: evaluation += 5.0f; break;
+                    case CHESS_PIECE_BISHOP: evaluation += 3.0f; break;
+                    case CHESS_PIECE_KNIGHT: evaluation += 3.0f; break;
+                    case CHESS_PIECE_PAWN: evaluation += 1.0f; break;
                 }
             } else if (piece->type != CHESS_PIECE_EMPTY && piece->color != color) {
                 switch (piece->type) {
-                    case CHESS_PIECE_KING: evaluation -= 1000.0f;
-                    case CHESS_PIECE_QUEEN: evaluation -= 9.0f;
-                    case CHESS_PIECE_ROOK: evaluation -= 5.0f;
-                    case CHESS_PIECE_BISHOP: evaluation -= 3.0f;
-                    case CHESS_PIECE_KNIGHT: evaluation -= 5.0f;
-                    case CHESS_PIECE_PAWN: evaluation -= 1.0f;
+                    case CHESS_PIECE_KING: evaluation -= 1000.0f; break;
+                    case CHESS_PIECE_QUEEN: evaluation -= 9.0f; break;
+                    case CHESS_PIECE_ROOK: evaluation -= 5.0f; break;
+                    case CHESS_PIECE_BISHOP: evaluation -= 3.0f; break;
+                    case CHESS_PIECE_KNIGHT: evaluation -= 3.0f; break;
+                    case CHESS_PIECE_PAWN: evaluation -= 1.0f; break;
+                }
+            }
+
+            if (piece->type == CHESS_PIECE_PAWN) {
+                float pawn_value;
+                if (piece->color == CHESS_COLOR_WHITE) {
+                    pawn_value = (y - 1) * 0.1f;
+                } else {
+                    pawn_value = (6 - y) * 0.1f;
+                }
+
+                float rank_value = (x < 3.5f) ? (1.0f / 3.5f) * x : ((-1.0f / 3.5f) * x + 2);
+                //rank_value *= 1.1f;
+
+                pawn_value *= rank_value;
+                pawn_value *= 10.0f;
+
+                if (piece->color == color) {
+                    evaluation += pawn_value;
+                } else {
+                    evaluation -= pawn_value;
                 }
             }
         }
@@ -57,7 +78,10 @@ static float alphabeta(const Chess_Context* chess_ctx, Chess_Color color, int de
                     for (int k = 0; k < available_moves_num && !beta_cut_off; ++k) {
                         chess_move_piece(chess_ctx, &auxiliar_ctx, &available_moves[k]);
                         child_result = alphabeta(&auxiliar_ctx, color, depth - 1, alpha, beta, 0, 0);
-                        if (child_result >= value) {
+                        //char move[245];
+                        //io_move_to_uci_notation(&available_moves[k], move);
+                        //log_debug("got %f for %s", child_result, move);
+                        if (child_result > value) {
                             value = child_result;
                             if (chosen_move) *chosen_move = available_moves[k];
                         }
@@ -85,7 +109,7 @@ static float alphabeta(const Chess_Context* chess_ctx, Chess_Color color, int de
                     for (int k = 0; k < available_moves_num && !alpha_cut_off; ++k) {
                         chess_move_piece(chess_ctx, &auxiliar_ctx, &available_moves[k]);
                         child_result = alphabeta(&auxiliar_ctx, color, depth - 1, alpha, beta, 1, 0);
-                        if (child_result <= value) {
+                        if (child_result < value) {
                             value = child_result;
                             if (chosen_move) *chosen_move = available_moves[k];
                         }
@@ -105,7 +129,26 @@ static float alphabeta(const Chess_Context* chess_ctx, Chess_Color color, int de
 }
 
 void ai_get_best_move(const Chess_Context* chess_ctx, char* move_str) {
+    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
+    int available_moves_num = 0;
+
+    // @temporary
     Chess_Move chosen_move;
+    while (1) {
+        int h = rand() % CHESS_BOARD_HEIGHT;
+        int w = rand() % CHESS_BOARD_WIDTH;
+        Chess_Board_Position pos = CHESS_POS(h, w);
+        if (chess_ctx->board[pos.y][pos.x].type != CHESS_PIECE_EMPTY &&
+            chess_ctx->board[pos.y][pos.x].color == chess_ctx->current_turn) {
+            available_moves_num = chess_available_moves_get(chess_ctx, pos, available_moves);
+            if (available_moves_num > 0) {
+                int r = rand() % available_moves_num;
+                chosen_move = available_moves[r];
+                break;
+            }
+        }
+    }
+
     float evaluation = alphabeta(chess_ctx, chess_ctx->current_turn, 5, -FLT_MAX, FLT_MAX, 1, &chosen_move);
     io_move_to_uci_notation(&chosen_move, move_str);
     log_debug("best move is %s, with evaluation of %.3f", move_str, evaluation);
