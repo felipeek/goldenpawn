@@ -72,6 +72,13 @@ static int is_square_being_attacked(const Chess_Context* chess_ctx, Chess_Board_
     return 0;
 }
 
+void chess_position_from_fen(Chess_Context* chess_ctx, char* fen_str) {
+    io_parse_fen(fen_str, chess_ctx);
+    king_positions_fill(chess_ctx);
+    chess_ctx->white_state.is_king_under_attack = is_square_being_attacked(chess_ctx, chess_ctx->white_state.king_position, CHESS_COLOR_BLACK);
+    chess_ctx->black_state.is_king_under_attack = is_square_being_attacked(chess_ctx, chess_ctx->black_state.king_position, CHESS_COLOR_WHITE);
+}
+
 // Note: this function MUST support chess_ctx == new_ctx !
 void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, const Chess_Move* move) {
     *new_ctx = *chess_ctx;
