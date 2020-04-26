@@ -72,8 +72,7 @@ static int is_square_being_attacked(const Chess_Context* chess_ctx, Chess_Board_
     return 0;
 }
 
-void chess_position_from_fen(Chess_Context* chess_ctx, char* fen_str) {
-    io_parse_fen(fen_str, chess_ctx);
+void chess_update_context(Chess_Context* chess_ctx) {
     king_positions_fill(chess_ctx);
     chess_ctx->white_state.is_king_under_attack = is_square_being_attacked(chess_ctx, chess_ctx->white_state.king_position, CHESS_COLOR_BLACK);
     chess_ctx->black_state.is_king_under_attack = is_square_being_attacked(chess_ctx, chess_ctx->black_state.king_position, CHESS_COLOR_WHITE);
@@ -195,11 +194,8 @@ void chess_move_piece(const Chess_Context* chess_ctx, Chess_Context* new_ctx, co
         }
     }
 
-    king_positions_fill(new_ctx);
-    new_ctx->white_state.is_king_under_attack = is_square_being_attacked(new_ctx, new_ctx->white_state.king_position, CHESS_COLOR_BLACK);
-    new_ctx->black_state.is_king_under_attack = is_square_being_attacked(new_ctx, new_ctx->black_state.king_position, CHESS_COLOR_WHITE);
-
     new_ctx->current_turn = new_ctx->current_turn == CHESS_COLOR_WHITE ? CHESS_COLOR_BLACK : CHESS_COLOR_WHITE;
+    chess_update_context(new_ctx);
 }
 
 static int chess_position_is_within_bounds(Chess_Board_Position position) {
@@ -293,12 +289,7 @@ static void chess_board_reset(Chess_Context* chess_ctx) {
 
 
 void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const char** argv) {
-    if (strcmp(argv[0], "startpos")) {
-        log_debug("Error: currently, startpos is needed");
-        return;
-    }
-
-    if (strcmp(argv[1], "moves")) {
+    if (strcmp(argv[0], "moves")) {
         log_debug("Error: moves expected");
         return;
     }
@@ -312,13 +303,13 @@ void chess_context_from_position_input(Chess_Context* chess_ctx, int argc, const
     chess_ctx->en_passant_info.available = 0;
 
     Chess_Move move;
-    for (int i = 2; i < argc; ++i) {
+    for (int i = 1; i < argc; ++i) {
         assert(strlen(argv[i]) == 4 || strlen(argv[i]) == 5);
         io_uci_notation_to_move(argv[i], &move);
         chess_move_piece(chess_ctx, chess_ctx, &move);
     }
 
-    if ((argc - 2) % 2 == 0) {
+    if ((argc - 1) % 2 == 0) {
         chess_ctx->current_turn = CHESS_COLOR_WHITE;
     } else {
         chess_ctx->current_turn = CHESS_COLOR_BLACK;
