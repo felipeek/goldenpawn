@@ -37,7 +37,7 @@ static int str_to_s32(char* text, int length) {
 static int build_fen_input(int argc, const char** argv, char* out) {
     char* aux = out;
     int moves_position = -1;
-    int i = 1;
+    int i = 0;
     for (; i < argc; ++i) {
         // We need to stop when 'moves' is found. (UCI)
         if (strcmp(argv[i], "moves") == 0) {

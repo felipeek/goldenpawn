@@ -38,15 +38,45 @@ static float ai_evaluate_position(const Chess_Context* chess_ctx, Chess_Color co
                 }
 
                 float rank_value = (x < 3.5f) ? (1.0f / 3.5f) * x : ((-1.0f / 3.5f) * x + 2);
-                //rank_value *= 1.1f;
 
                 pawn_value *= rank_value;
-                pawn_value *= 10.0f;
 
                 if (piece->color == color) {
                     evaluation += pawn_value;
                 } else {
                     evaluation -= pawn_value;
+                }
+            }
+
+            if (piece->type == CHESS_PIECE_ROOK) {
+                int open_file = 1;
+                int semi_open_file = 1;
+
+                for (int i = 0; i < CHESS_BOARD_HEIGHT; ++i) {
+                    Chess_Piece* file_piece = &chess_ctx->board[i][x];
+                    if (file_piece->type == CHESS_PIECE_PAWN) {
+                        if (file_piece->color != piece->color) {
+                            open_file = 0;
+                        } else {
+                            open_file = 0;
+                            semi_open_file = 0;
+                            break;
+                        }
+                    }
+                }
+
+                if (open_file) {
+                    if (piece->color == color) {
+                        evaluation += 1.0f;
+                    } else {
+                        evaluation -= 1.0f;
+                    }
+                } else if (semi_open_file) {
+                    if (piece->color == color) {
+                        evaluation += 0.8f;
+                    } else {
+                        evaluation -= 0.8f;
+                    }
                 }
             }
         }
@@ -61,6 +91,8 @@ static float alphabeta(const Chess_Context* chess_ctx, Chess_Color color, int de
     Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
     int available_moves_num;
     float child_result;
+
+    int chosen_move_set = 0;
 
     if (depth == 0) {
         return ai_evaluate_position(chess_ctx, color);
@@ -78,9 +110,14 @@ static float alphabeta(const Chess_Context* chess_ctx, Chess_Color color, int de
                     for (int k = 0; k < available_moves_num && !beta_cut_off; ++k) {
                         chess_move_piece(chess_ctx, &auxiliar_ctx, &available_moves[k]);
                         child_result = alphabeta(&auxiliar_ctx, color, depth - 1, alpha, beta, 0, 0);
-                        //char move[245];
-                        //io_move_to_uci_notation(&available_moves[k], move);
-                        //log_debug("got %f for %s", child_result, move);
+
+                        // we do this to be sure that chosen_move will always be set if there is at least 1 available move.
+                        // without this, the chosen move will not be set when there is a forced mate in N, where N < depth
+                        if (!chosen_move_set && chosen_move) {
+                            chosen_move_set = 1;
+                            *chosen_move = available_moves[k];
+                        }
+
                         if (child_result > value) {
                             value = child_result;
                             if (chosen_move) *chosen_move = available_moves[k];
@@ -109,6 +146,14 @@ static float alphabeta(const Chess_Context* chess_ctx, Chess_Color color, int de
                     for (int k = 0; k < available_moves_num && !alpha_cut_off; ++k) {
                         chess_move_piece(chess_ctx, &auxiliar_ctx, &available_moves[k]);
                         child_result = alphabeta(&auxiliar_ctx, color, depth - 1, alpha, beta, 1, 0);
+
+                        // we do this to be sure that chosen_move will always be set if there is at least 1 available move.
+                        // without this, the chosen move will not be set when there is a forced mate in N, where N < depth
+                        if (!chosen_move_set && chosen_move) {
+                            chosen_move_set = 1;
+                            *chosen_move = available_moves[k];
+                        }
+
                         if (child_result < value) {
                             value = child_result;
                             if (chosen_move) *chosen_move = available_moves[k];
@@ -129,26 +174,7 @@ static float alphabeta(const Chess_Context* chess_ctx, Chess_Color color, int de
 }
 
 void ai_get_best_move(const Chess_Context* chess_ctx, char* move_str) {
-    Chess_Move available_moves[CHESS_BOARD_HEIGHT * CHESS_BOARD_WIDTH];
-    int available_moves_num = 0;
-
-    // @temporary
     Chess_Move chosen_move;
-    while (1) {
-        int h = rand() % CHESS_BOARD_HEIGHT;
-        int w = rand() % CHESS_BOARD_WIDTH;
-        Chess_Board_Position pos = CHESS_POS(h, w);
-        if (chess_ctx->board[pos.y][pos.x].type != CHESS_PIECE_EMPTY &&
-            chess_ctx->board[pos.y][pos.x].color == chess_ctx->current_turn) {
-            available_moves_num = chess_available_moves_get(chess_ctx, pos, available_moves);
-            if (available_moves_num > 0) {
-                int r = rand() % available_moves_num;
-                chosen_move = available_moves[r];
-                break;
-            }
-        }
-    }
-
     float evaluation = alphabeta(chess_ctx, chess_ctx->current_turn, 5, -FLT_MAX, FLT_MAX, 1, &chosen_move);
     io_move_to_uci_notation(&chosen_move, move_str);
     log_debug("best move is %s, with evaluation of %.3f", move_str, evaluation);
