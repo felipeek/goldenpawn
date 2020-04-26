@@ -12,5 +12,6 @@ void io_init(IO_Context* io_ctx);
 void io_start(IO_Context* io_ctx);
 void io_move_to_uci_notation(const Chess_Move* move, char* uci_str);
 void io_uci_notation_to_move(const char* uci_str, Chess_Move* move);
+int  io_parse_fen(char* fen, Chess_Context* ctx);
 
 #endif
